@@ -1,0 +1,28 @@
+# Environment & Secrets
+.env
+.env.local
+.streamlit/secrets.toml
+
+# Python & Virtual Environments
+.venv/
+venv/
+ENV/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# OS generated
+.DS_Store
+Thumbs.db
+
