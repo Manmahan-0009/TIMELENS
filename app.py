@@ -1,13 +1,15 @@
 """TimeLens — AI-Powered Visual Heritage Comparison.
 
-Streamlit Application.
+Streamlit Application — v1.1 Premium Heritage Intelligence Edition.
 Powered by Gemma 4 (gemma-4-26b-a4b-it).
 """
 
+import base64
 import html
 import logging
-import streamlit as st
 from pathlib import Path
+import streamlit as st
+import streamlit.components.v1 as components
 
 # Configure safe diagnostic logging
 logging.basicConfig(
@@ -19,6 +21,7 @@ logger = logging.getLogger("timelens.app")
 from services.image_service import validate_and_process_uploaded_image
 from services.gemma_service import analyze_heritage_images, check_credentials, get_config
 from services.report_service import format_exportable_report, load_cached_demo
+from services.pdf_service import generate_heritage_pdf, calculate_preservation_scorecard
 
 # -----------------------------------------------------------------------------
 # PAGE CONFIGURATION & THEME STYLING
@@ -77,7 +80,7 @@ CUSTOM_CSS = """
     .hero-subtitle {
         font-size: 1.0rem;
         color: #A7B4C7;
-        max-width: 800px;
+        max-width: 820px;
         line-height: 1.5;
         margin-bottom: 1.5rem;
     }
@@ -89,6 +92,29 @@ CUSTOM_CSS = """
         border-radius: 12px;
         padding: 1.25rem;
         margin-bottom: 1rem;
+    }
+
+    /* Scorecard metrics */
+    .scorecard-card {
+        background-color: #172235;
+        border: 1px solid rgba(232, 184, 109, 0.25);
+        border-radius: 10px;
+        padding: 1rem 0.75rem;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    .scorecard-label {
+        color: #A7B4C7;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-bottom: 0.25rem;
+    }
+    .scorecard-value {
+        font-size: 1.85rem;
+        font-weight: 800;
+        color: #F8FAFC;
     }
 
     /* Image label badges */
@@ -149,34 +175,42 @@ CUSTOM_CSS = """
         color: #34D399;
         padding: 2px 8px;
         border-radius: 4px;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         font-weight: 700;
         border: 1px solid rgba(52, 211, 153, 0.3);
     }
 
     .pill-certainty-medium {
-        background-color: rgba(251, 191, 36, 0.15);
-        color: #FBBF24;
+        background-color: rgba(232, 184, 109, 0.15);
+        color: #E8B86D;
         padding: 2px 8px;
         border-radius: 4px;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         font-weight: 700;
-        border: 1px solid rgba(251, 191, 36, 0.3);
+        border: 1px solid rgba(232, 184, 109, 0.3);
     }
 
     .pill-certainty-low {
-        background-color: rgba(167, 180, 199, 0.15);
-        color: #A7B4C7;
+        background-color: rgba(248, 113, 113, 0.15);
+        color: #F87171;
         padding: 2px 8px;
         border-radius: 4px;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         font-weight: 700;
-        border: 1px solid rgba(167, 180, 199, 0.3);
+        border: 1px solid rgba(248, 113, 113, 0.3);
     }
 
-    /* Change Item Card */
+    .cached-demo-banner {
+        background: rgba(232, 184, 109, 0.12);
+        border: 1px solid #E8B86D;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+        color: #E8B86D;
+    }
+
     .change-card {
-        background-color: #131D2E;
+        background-color: #172235;
         border-left: 3px solid #E8B86D;
         border-radius: 8px;
         padding: 1rem;
@@ -184,50 +218,42 @@ CUSTOM_CSS = """
     }
 
     .change-evidence {
-        font-size: 0.88rem;
         color: #CBD5E1;
-        margin-top: 0.4rem;
-        line-height: 1.4;
+        font-size: 0.88rem;
+        line-height: 1.5;
+        margin-top: 0.35rem;
+        background: rgba(11, 18, 32, 0.5);
+        padding: 6px 10px;
+        border-radius: 6px;
     }
 
-    /* Cached Demo Banner */
-    .cached-demo-banner {
-        background: rgba(56, 189, 248, 0.12);
-        border: 1px solid rgba(56, 189, 248, 0.4);
-        border-radius: 8px;
-        padding: 0.85rem 1.25rem;
-        margin-bottom: 1.25rem;
-        color: #38BDF8;
-        font-size: 0.95rem;
-    }
-
-    /* Primary Analyze button */
-    div.stButton > button[kind="primary"] {
+    /* Buttons */
+    div.stButton > button:first-child {
         background-color: #E8B86D !important;
         color: #0B1220 !important;
         font-weight: 700 !important;
         border: none !important;
         border-radius: 8px !important;
-        padding: 0.6rem 1.5rem !important;
-        font-size: 1.05rem !important;
+        padding: 0.6rem 1.25rem !important;
+        font-size: 0.95rem !important;
         transition: all 0.2s ease-in-out !important;
-        width: 100%;
-        min-height: 48px;
+        min-height: 48px !important;
     }
 
-    div.stButton > button[kind="primary"]:hover {
-        background-color: #dca354 !important;
-        box-shadow: 0 4px 16px rgba(232, 184, 109, 0.3) !important;
+    div.stButton > button:first-child:hover {
+        background-color: #D6A458 !important;
+        box-shadow: 0 4px 14px rgba(232, 184, 109, 0.35) !important;
     }
 
     div.stDownloadButton > button {
-        background-color: #172235 !important;
+        background-color: transparent !important;
         color: #E8B86D !important;
-        border: 1px solid rgba(232, 184, 109, 0.4) !important;
-        font-weight: 700 !important;
+        border: 1px solid #E8B86D !important;
         border-radius: 8px !important;
-        min-height: 48px !important;
+        font-weight: 700 !important;
+        padding: 0.6rem 1.25rem !important;
         transition: all 0.2s ease-in-out !important;
+        min-height: 48px !important;
     }
 
     div.stDownloadButton > button:hover {
@@ -249,6 +275,169 @@ CUSTOM_CSS = """
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
+
+def render_interactive_slider(
+    before_bytes: bytes,
+    after_bytes: bytes,
+    before_alt: str = "Historical photograph",
+    after_alt: str = "Modern photograph",
+):
+    """Render a responsive, touch-friendly, keyboard-accessible comparison slider."""
+    b64_before = base64.b64encode(before_bytes).decode("ascii")
+    b64_after = base64.b64encode(after_bytes).decode("ascii")
+    escaped_before_alt = html.escape(before_alt or "Historical photograph")
+    escaped_after_alt = html.escape(after_alt or "Modern photograph")
+
+    slider_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+      body {{
+        background: transparent;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #F8FAFC;
+        overflow: hidden;
+      }}
+      .slider-container {{
+        position: relative;
+        width: 100%;
+        max-width: 960px;
+        height: 470px;
+        margin: 0 auto;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(232, 184, 109, 0.35);
+        background-color: #0B1220;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+        user-select: none;
+        -webkit-user-select: none;
+      }}
+      .img-layer {{
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+      }}
+      .img-layer img {{
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        background-color: #0B1220;
+        display: block;
+        user-select: none;
+        pointer-events: none;
+      }}
+      .layer-after {{
+        clip-path: polygon(50% 0, 100% 0, 100% 100%, 50% 100%);
+        will-change: clip-path;
+      }}
+      .badge-tag {{
+        position: absolute;
+        top: 14px;
+        padding: 5px 12px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+        pointer-events: none;
+        z-index: 5;
+      }}
+      .badge-before {{
+        left: 14px;
+        background: rgba(23, 34, 53, 0.9);
+        color: #E8B86D;
+        border: 1px solid rgba(232, 184, 109, 0.6);
+      }}
+      .badge-after {{
+        right: 14px;
+        background: rgba(23, 34, 53, 0.9);
+        color: #34D399;
+        border: 1px solid rgba(52, 211, 153, 0.6);
+      }}
+      .divider-line {{
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 3px;
+        background: #E8B86D;
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 6;
+        box-shadow: 0 0 10px rgba(0,0,0,0.8);
+      }}
+      .slider-handle {{
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: #172235;
+        border: 2px solid #E8B86D;
+        box-shadow: 0 0 14px rgba(232, 184, 109, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #E8B86D;
+        font-size: 16px;
+        font-weight: 900;
+        pointer-events: none;
+      }}
+      .range-input {{
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: ew-resize;
+        z-index: 10;
+        margin: 0;
+      }}
+    </style>
+    </head>
+    <body>
+    <div class="slider-container" id="sliderContainer">
+      <div class="img-layer">
+        <img src="data:image/jpeg;base64,{b64_before}" alt="{escaped_before_alt}" />
+        <div class="badge-tag badge-before">📜 Historical</div>
+      </div>
+      <div class="img-layer layer-after" id="afterLayer">
+        <img src="data:image/jpeg;base64,{b64_after}" alt="{escaped_after_alt}" />
+        <div class="badge-tag badge-after">🏙️ Modern</div>
+      </div>
+      <div class="divider-line" id="dividerLine">
+        <div class="slider-handle">↔</div>
+      </div>
+      <input type="range" min="0" max="100" value="50" class="range-input" id="rangeInput" aria-label="Slide horizontally to compare historical and modern photographs" />
+    </div>
+    <script>
+      const range = document.getElementById('rangeInput');
+      const afterLayer = document.getElementById('afterLayer');
+      const dividerLine = document.getElementById('dividerLine');
+
+      function update(val) {{
+        afterLayer.style.clipPath = `polygon(${{val}}% 0, 100% 0, 100% 100%, ${{val}}% 100%)`;
+        dividerLine.style.left = `${{val}}%`;
+      }}
+
+      range.addEventListener('input', (e) => update(e.target.value));
+    </script>
+    </body>
+    </html>
+    """
+    components.html(slider_html, height=485)
+
+
 # -----------------------------------------------------------------------------
 # SESSION STATE INITIALIZATION
 # -----------------------------------------------------------------------------
@@ -264,6 +453,8 @@ if "use_sample_pair" not in st.session_state:
     st.session_state["use_sample_pair"] = False
 if "is_cached_demo" not in st.session_state:
     st.session_state["is_cached_demo"] = False
+if "pdf_bytes" not in st.session_state:
+    st.session_state["pdf_bytes"] = None
 
 # -----------------------------------------------------------------------------
 # SECTION 1: HERO
@@ -278,7 +469,7 @@ st.markdown(
         <div class="hero-subtitle">
             Discover how historical places have evolved using AI-powered visual comparison.
             Structured heritage intelligence reporting on architectural continuity, urban expansion,
-            and environmental shifts.
+            environmental shifts, and preservation scorecards.
         </div>
     </div>
     """,
@@ -317,6 +508,7 @@ with ctrl_col2:
         st.session_state["use_sample_pair"] = True
         st.session_state["is_cached_demo"] = False
         st.session_state["analysis_error"] = None
+        st.session_state["pdf_bytes"] = None
 
 with ctrl_col3:
     st.write("")
@@ -333,6 +525,7 @@ with ctrl_col3:
             st.session_state["analysis_result"] = cached_data
             st.session_state["is_cached_demo"] = True
             st.session_state["analysis_error"] = None
+            st.session_state["pdf_bytes"] = None
             st.session_state["current_location_analyzed"] = cached_data.get("location_name") or "Sydney Harbour"
             logger.info("Cached demo loaded into session state")
         else:
@@ -366,6 +559,7 @@ if uploaded_before is not None:
     before_file = uploaded_before
     st.session_state["use_sample_pair"] = False
     st.session_state["is_cached_demo"] = False
+    st.session_state["pdf_bytes"] = None
 elif st.session_state["use_sample_pair"] and sample_before_path.is_file():
     before_file = sample_before_path.read_bytes()
 
@@ -373,6 +567,7 @@ if uploaded_after is not None:
     after_file = uploaded_after
     st.session_state["use_sample_pair"] = False
     st.session_state["is_cached_demo"] = False
+    st.session_state["pdf_bytes"] = None
 elif st.session_state["use_sample_pair"] and sample_after_path.is_file():
     after_file = sample_after_path.read_bytes()
 
@@ -397,26 +592,6 @@ if after_file:
     else:
         logger.info(f"Modern image validated: size={after_data['processed_size']}, bytes={len(after_data['jpeg_bytes'])}")
 
-with col_before:
-    if before_data:
-        st.image(
-            before_data["pil_image"],
-            caption=f"Historical Photograph ({before_data['original_size'][0]}×{before_data['original_size'][1]})",
-            use_container_width=True,
-        )
-    elif not before_err:
-        st.info("Awaiting historical photograph upload.")
-
-with col_after:
-    if after_data:
-        st.image(
-            after_data["pil_image"],
-            caption=f"Modern Photograph ({after_data['original_size'][0]}×{after_data['original_size'][1]})",
-            use_container_width=True,
-        )
-    elif not after_err:
-        st.info("Awaiting modern photograph upload.")
-
 # Cache invalidation logic: only invalidate when an existing valid pair is replaced by a DIFFERENT pair
 if before_data and after_data:
     combined_hash = f"{before_data['hash']}_{after_data['hash']}"
@@ -426,7 +601,61 @@ if before_data and after_data:
             st.session_state["analysis_result"] = None
             st.session_state["analysis_error"] = None
             st.session_state["current_location_analyzed"] = None
+            st.session_state["pdf_bytes"] = None
     st.session_state["current_image_hash"] = combined_hash
+
+# -----------------------------------------------------------------------------
+# INTERACTIVE COMPARISON VIEWER SECTION
+# -----------------------------------------------------------------------------
+if before_data and after_data:
+    st.markdown("### 📸 Interactive Comparison Viewer")
+    viewer_mode = st.radio(
+        "Viewing Mode:",
+        ["Interactive Split-Screen Slider", "Side-by-Side Dual View"],
+        horizontal=True,
+        key="viewer_mode_selection",
+    )
+
+    report_cached = st.session_state.get("analysis_result") or {}
+    before_desc = report_cached.get("before_description") or "Historical archival photograph"
+    after_desc = report_cached.get("after_description") or "Modern contemporary photograph"
+
+    if viewer_mode == "Interactive Split-Screen Slider":
+        render_interactive_slider(
+            before_bytes=before_data["jpeg_bytes"],
+            after_bytes=after_data["jpeg_bytes"],
+            before_alt=before_desc,
+            after_alt=after_desc,
+        )
+    else:
+        pv_col1, pv_col2 = st.columns(2)
+        with pv_col1:
+            st.image(
+                before_data["pil_image"],
+                caption=f"Historical Photograph ({before_data['original_size'][0]}×{before_data['original_size'][1]})",
+                use_container_width=True,
+            )
+        with pv_col2:
+            st.image(
+                after_data["pil_image"],
+                caption=f"Modern Photograph ({after_data['original_size'][0]}×{after_data['original_size'][1]})",
+                use_container_width=True,
+            )
+
+    st.caption(
+        "ℹ️ *Visual Alignment Notice: Historical and contemporary photographic angles, focal lengths, "
+        "and camera vantage points may differ. The slider offers comparative visual context.*"
+    )
+elif before_data and not after_data:
+    with col_before:
+        st.image(before_data["pil_image"], caption="Historical Photograph Preview", use_container_width=True)
+    with col_after:
+        st.info("Awaiting modern photograph upload.")
+elif after_data and not before_data:
+    with col_before:
+        st.info("Awaiting historical photograph upload.")
+    with col_after:
+        st.image(after_data["pil_image"], caption="Modern Photograph Preview", use_container_width=True)
 
 location_changed = (
     st.session_state["analysis_result"] is not None
@@ -483,11 +712,13 @@ if analyze_btn and can_analyze:
             logger.error(f"Analysis failed: {err_msg}")
             st.session_state["analysis_error"] = err_msg
             st.session_state["analysis_result"] = None
+            st.session_state["pdf_bytes"] = None
         else:
             logger.info("Analysis succeeded. Updating session state...")
             st.session_state["analysis_result"] = result_report
             st.session_state["analysis_error"] = None
             st.session_state["is_cached_demo"] = False
+            st.session_state["pdf_bytes"] = None
             st.session_state["current_location_analyzed"] = location_input.strip()
 
 # Display persistent error if present
@@ -541,6 +772,64 @@ if report and isinstance(report, dict):
     if report.get("comparison_warning"):
         st.warning(f"⚠️ {report['comparison_warning']}")
 
+    # -------------------------------------------------------------------------
+    # PRESERVATION SCORECARD DASHBOARD
+    # -------------------------------------------------------------------------
+    scorecard = calculate_preservation_scorecard(report)
+    sc1, sc2, sc3, sc4 = st.columns(4)
+
+    rel_colors = {
+        "HIGH": "#34D399",
+        "MEDIUM": "#E8B86D",
+        "LOW": "#F59E0B",
+        "NOT COMPARABLE": "#F87171",
+    }
+    rel_color = rel_colors.get(scorecard["reliability"], "#E8B86D")
+
+    with sc1:
+        st.markdown(
+            f"""
+            <div class="scorecard-card">
+                <div class="scorecard-label">Observed Changes</div>
+                <div class="scorecard-value" style="color: #E8B86D;">{scorecard['total_changes']}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with sc2:
+        st.markdown(
+            f"""
+            <div class="scorecard-card">
+                <div class="scorecard-label">Preserved Structures</div>
+                <div class="scorecard-value" style="color: #34D399;">{scorecard['preserved_count']}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with sc3:
+        st.markdown(
+            f"""
+            <div class="scorecard-card">
+                <div class="scorecard-label">Uncertain Findings</div>
+                <div class="scorecard-value" style="color: #FBBF24;">{scorecard['uncertain_count']}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with sc4:
+        st.markdown(
+            f"""
+            <div class="scorecard-card">
+                <div class="scorecard-label">Preservation Reliability</div>
+                <div class="scorecard-value" style="color: {rel_color}; font-size: 1.45rem;">{scorecard['reliability']}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.caption(f"📊 **Scorecard Reliability Assessment:** {scorecard['rationale']}")
+    st.write("")
+
     # Executive Summary Card
     st.markdown(
         f"""
@@ -575,16 +864,37 @@ if report and isinstance(report, dict):
             unsafe_allow_html=True,
         )
 
-    # Section: Observable Visual & Architectural Changes
+    # -------------------------------------------------------------------------
+    # INTERACTIVE VISUAL CHANGE EXPLORER (P1)
+    # -------------------------------------------------------------------------
     changes = report.get("changes", [])
-    st.markdown(f"#### 🔍 Observable Visual Changes ({len(changes)})")
-    if changes:
-        for idx, item in enumerate(changes):
+    st.markdown(f"#### 🔍 Visual Change Explorer ({len(changes)} Findings)")
+
+    # Collect unique categories
+    raw_categories = [str(item.get("category", "General")).strip() for item in changes if item.get("category")]
+    unique_categories = sorted(list(set(raw_categories)))
+    filter_options = ["All Findings"] + unique_categories
+
+    sel_cat = st.selectbox(
+        "Filter Findings by Thematic Category:",
+        filter_options,
+        index=0,
+        help="Filter observable evolutions dynamically without invoking additional AI calls.",
+        key="category_filter_dropdown",
+    )
+
+    filtered_changes = [
+        item for item in changes
+        if sel_cat == "All Findings" or str(item.get("category", "")).strip().lower() == sel_cat.lower()
+    ]
+
+    if filtered_changes:
+        for idx, item in enumerate(filtered_changes):
             cert = str(item.get("certainty", "medium")).lower()
             cert_cls = f"pill-certainty-{cert}"
             st.markdown(
                 f"""
-                <div class="change-card">
+                <div class="change-card" aria-label="Finding {idx+1}: {html.escape(str(item.get('observation', '')))}">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
                         <span style="color: #E8B86D; font-weight: 700; font-size: 0.95rem;">{html.escape(str(item.get('category', 'Change')))} • {html.escape(str(item.get('observation', '')))}</span>
                         <span class="{cert_cls}">{html.escape(cert.upper())} CERTAINTY</span>
@@ -596,7 +906,7 @@ if report and isinstance(report, dict):
                 unsafe_allow_html=True,
             )
     else:
-        st.info("No architectural or physical changes identified between the supplied photographs.")
+        st.info(f"No changes matching category '{sel_cat}'.")
 
     # Two columns: Preserved Elements & Uncertain Findings
     elem_col, uncert_col = st.columns(2)
@@ -610,7 +920,7 @@ if report and isinstance(report, dict):
                 cert_cls = f"pill-certainty-{cert}"
                 st.markdown(
                     f"""
-                    <div style="background-color: #131D2E; border-left: 3px solid #34D399; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+                    <div style="background-color: #131D2E; border-left: 3px solid #34D399; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;" aria-label="Preserved structure: {html.escape(str(item.get('element', '')))}">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <strong style="color: #34D399; font-size: 0.92rem;">{html.escape(str(item.get('element', '')))}</strong>
                             <span class="{cert_cls}">{html.escape(cert.upper())}</span>
@@ -630,7 +940,7 @@ if report and isinstance(report, dict):
             for item in uncertain:
                 st.markdown(
                     f"""
-                    <div style="background-color: #131D2E; border-left: 3px solid #FBBF24; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+                    <div style="background-color: #131D2E; border-left: 3px solid #FBBF24; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;" aria-label="Uncertain observation: {html.escape(str(item.get('claim', '')))}">
                         <strong style="color: #FBBF24; font-size: 0.92rem;">{html.escape(str(item.get('claim', '')))}</strong>
                         <div style="color: #CBD5E1; font-size: 0.85rem; margin-top: 0.3rem; line-height: 1.4;"><strong>Reason:</strong> {html.escape(str(item.get('reason', '')))}</div>
                     </div>
@@ -652,10 +962,42 @@ if report and isinstance(report, dict):
             unsafe_allow_html=True,
         )
 
-    # Download Report & Raw JSON row
-    dl_col, json_col = st.columns([1, 1])
+    # -------------------------------------------------------------------------
+    # EXPORT ROW: PROFESSIONAL PDF & STRUCTURED JSON
+    # -------------------------------------------------------------------------
+    st.markdown("#### 📥 Archival Intelligence Exports")
+    dl_pdf_col, dl_json_col = st.columns(2)
 
-    with dl_col:
+    with dl_pdf_col:
+        # Cache generated PDF in session state to prevent slow repeated builds
+        if st.session_state.get("pdf_bytes") is None and before_data and after_data:
+            with st.spinner("Compiling publication-grade PDF report..."):
+                try:
+                    st.session_state["pdf_bytes"] = generate_heritage_pdf(
+                        report=report,
+                        before_image_bytes=before_data["jpeg_bytes"],
+                        after_image_bytes=after_data["jpeg_bytes"],
+                        location_name=st.session_state.get("current_location_analyzed") or report.get("location_name") or "",
+                        model_name=model_name,
+                        is_cached=st.session_state.get("is_cached_demo", False),
+                    )
+                except Exception as pdf_err:
+                    logger.error(f"Failed to generate PDF: {pdf_err}")
+                    st.session_state["pdf_bytes"] = None
+
+        if st.session_state.get("pdf_bytes"):
+            st.download_button(
+                label="📄 Download Heritage Report (PDF)",
+                data=st.session_state["pdf_bytes"],
+                file_name="timelens_heritage_report.pdf",
+                mime="application/pdf",
+                help="Download multi-page PDF report with embedded photographs, preservation scorecard, and archival intelligence.",
+                use_container_width=True,
+            )
+        else:
+            st.button("📄 PDF Report Unavailable", disabled=True, use_container_width=True)
+
+    with dl_json_col:
         export_json_str = format_exportable_report(
             report=report,
             model_name=model_name,
@@ -668,13 +1010,12 @@ if report and isinstance(report, dict):
             data=export_json_str,
             file_name="timelens_heritage_report.json",
             mime="application/json",
-            help="Download the validated report including metadata and AI disclaimer.",
+            help="Download the validated JSON report schema including metadata and AI disclaimer.",
             use_container_width=True,
         )
 
-    with json_col:
-        with st.expander("🔍 View Raw JSON Intelligence Schema"):
-            st.json(report)
+    with st.expander("🔍 View Raw JSON Intelligence Schema"):
+        st.json(report)
 
 # -----------------------------------------------------------------------------
 # SECTION 5: FOOTER & PRIVACY
